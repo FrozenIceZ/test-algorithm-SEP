@@ -49,8 +49,8 @@ class LSTM_Autoencoder:
         # I added them here like this for simplicity.
         self.PREDICTION_STEPS = 4  # number of predicted timesteps in the future
         self.OBSERVED_STEPS = 7  # number of observed timesteps given as input
-        self.PREDICTION_FEATURES = 3  # normally you just want to predict (x,y,z), but sometimes other features are interesting
-        self.OBSERVED_FEATURES = 9  # number of observed features given as input (e.g. x,y,v,...etc.)
+        self.PREDICTION_FEATURES = 2  # normally you just want to predict (x,y,z), but sometimes other features are interesting
+        self.OBSERVED_FEATURES = 5  # number of observed features given as input (e.g. x,y,v,...etc.)
         self.NEURONS = 128  # for the model architecture, if you run out of RAM, lower it to 64 or 32 (performance might suffer, but I am not sure)
         self.EPOCHS = 20  # number of epochs for training (you might wanna lower it if using a lot of data)
         self.lr = 1e-3  # learning rate (for training)
@@ -145,7 +145,7 @@ class LSTM_Autoencoder:
         states_observed = inputs[:, 0:7,
                           :]  # takes first 7 timesteps of the input
         gt_targets = inputs[:, 7:11,
-                     1:4]  # takes last 4 timesteps as the training target and only x,y,z
+                     1:3]  # takes last 4 timesteps as the training target and only x,y,z
         # sometimes in the recorded data, the object is not visible, so we do not want to use these timesteps
         # for computing the error (and therefore we set the weights of those steps to 0)
 
@@ -191,12 +191,12 @@ def predicting():
     network = LSTM_Autoencoder.load()  # loads saved model
 
     allDataPathsmax2 = np.load(
-        "./StoredData/allDataPathsmax2.npy")  # loads in tensors to normalize and denormalize data
-    allDataPathsmin2 = np.load("./StoredData/allDataPathsmin2.npy")
+        "StoredData/allDataPathsmax2.npy")  # loads in tensors to normalize and denormalize data
+    allDataPathsmin2 = np.load("StoredData/allDataPathsmin2.npy")
     allDataPathsmax2Normalized = np.load(
-        "./StoredData/allDataPathsmax2Normalized.npy")
+        "StoredData/allDataPathsmax2Normalized.npy")
     allDataPathsmin2Normalized = np.load(
-        "./StoredData/allDataPathsmin2Normalized.npy")
+        "StoredData/allDataPathsmin2Normalized.npy")
     allDataPathsmax2 = tf.convert_to_tensor(allDataPathsmax2)
     allDataPathsmin2 = tf.convert_to_tensor(allDataPathsmin2)
     allDataPathsmax2Normalized = tf.convert_to_tensor(
@@ -221,12 +221,9 @@ def predicting():
     unNormalizeTimeTensor = unNormalizeTensor[0:1]
     unNormalizeXTensor = unNormalizeTensor[1:2]
     unNormalizeYTensor = unNormalizeTensor[2:3]
-    unNormalizeZTensor = unNormalizeTensor[3:4]
     unNormalizeTime = unNormalizeTimeTensor.numpy()[0]
     unNormalizeX = unNormalizeXTensor.numpy()[0]
-    unNormalizeY = unNormalizeYTensor.numpy()[0]
-    unNormalizeZ = unNormalizeZTensor.numpy()[
-        0]  # stores them in proper individual numpy floats
+    unNormalizeY = unNormalizeYTensor.numpy()[0]   # stores them in proper individual numpy floats
 
     allData = read_json("data.txt")  # loops through prediction input
     worldData = allData[0]["world"]
@@ -241,26 +238,23 @@ def predicting():
         agentDict = {"agent_id": agent["agent_id"],
                      "initial_timestamp": agent_movement[7]["timestamp"],
                      "predicted_paths": []}
-
-        agentPathTensor = tf.zeros([0, 9])
+        timeArray = [None] * len(agent_movement)
+        agentPathTensor = tf.zeros([0, 5])
         for s in range(len(agent_movement)):
+            timeArray[s] = agent_movement[s]['timestamp']
             positionTensor = tf.constant(
                 [agent_movement[s]['timestamp'],
                  agent_movement[s]['position']['pos_x'],
                  agent_movement[s]['position']['pos_y'],
-                 agent_movement[s]['position']['pos_z'],
-                 agent_movement[s]['position']['agent_angle'],
                  agent_movement[s]['velocity']['vel_x'],
-                 agent_movement[s]['velocity']['vel_y'],
-                 agent_movement[s]['velocity']['vel_z'],
-                 agent_movement[s]['velocity']['agent_vangle']])
+                 agent_movement[s]['velocity']['vel_y']])
             positionTensor = tf.math.multiply(positionTensor,
                                               normalizeTensor)  # normalize points
             agentPathTensor = tf.concat([agentPathTensor, [positionTensor]],
                                         axis=0)
 
         sizeAgentPath = agentPathTensor.get_shape().as_list()
-        inputTensor = tf.zeros([0, 7, 9])
+        inputTensor = tf.zeros([0, 7, 5])
         timestampTensor = tf.zeros([0])
         for s in range(sizeAgentPath[0] - 7):
             oneInputTensor = agentPathTensor[s:s + 7, :]
@@ -273,19 +267,14 @@ def predicting():
         if sizeInputtensor[0] != 0:
             prediction = network.predict(inputTensor)
             for a in range(len(prediction)):
-                pathDict = {"timeStampStart": (timestampTensor[
-                                                   a].numpy().item() * unNormalizeTime.item()),
+                pathDict = {"timeStampStart": (timeArray[a+7]),
                             "probability": 1, "steps": []}
                 for b in range(len(prediction[a])):
-                    timegap = timestampTensor[a].numpy().item() - \
-                              timestampTensor[a - 1].numpy().item()
-
+                    timegap = timeArray[a] - timeArray[a - 1]
                     stepDict = {
-                        "timestamp": (timestampTensor[a].numpy().item() + (
-                                    timegap * b)) * unNormalizeTime.item(),
+                        "timestamp": (timeArray[a] + (timegap * b)),
                         "x": prediction[a][b][0] * unNormalizeX.item(),
-                        "y": prediction[a][b][1] * unNormalizeY.item(),
-                        "z": prediction[a][b][2] * unNormalizeZ.item()}
+                        "y": prediction[a][b][1] * unNormalizeY.item()}
 
                     pathDict["steps"].append(stepDict)
                 agentDict["predicted_paths"].append(pathDict)

@@ -49,8 +49,8 @@ class LSTM_Autoencoder:
         # I added them here like this for simplicity.
         self.PREDICTION_STEPS = 4  # number of predicted timesteps in the future
         self.OBSERVED_STEPS = 7  # number of observed timesteps given as input
-        self.PREDICTION_FEATURES = 3  # normally you just want to predict (x,y,z), but sometimes other features are interesting
-        self.OBSERVED_FEATURES = 9  # number of observed features given as input (e.g. x,y,v,...etc.)
+        self.PREDICTION_FEATURES = 2  # normally you just want to predict (x,y,z), but sometimes other features are interesting
+        self.OBSERVED_FEATURES = 5  # number of observed features given as input (e.g. x,y,v,...etc.)
         self.NEURONS = 128  # for the model architecture, if you run out of RAM, lower it to 64 or 32 (performance might suffer, but I am not sure)
         self.EPOCHS = 20  # number of epochs for training (you might wanna lower it if using a lot of data)
         self.lr = 1e-3  # learning rate (for training)
@@ -145,7 +145,7 @@ class LSTM_Autoencoder:
         states_observed = inputs[:, 0:7,
                           :]  # takes first 7 timesteps of the input
         gt_targets = inputs[:, 7:11,
-                     1:4]  # takes last 4 timesteps as the training target and only x,y,z
+                     1:3]  # takes last 4 timesteps as the training target and only x,y,z
         # sometimes in the recorded data, the object is not visible, so we do not want to use these timesteps
         # for computing the error (and therefore we set the weights of those steps to 0)
 
@@ -187,36 +187,32 @@ class LSTM_Autoencoder:
 
 def training():
     allData = read_json("data.txt")  # loads data
-    allDataPathsTensor = tf.zeros([0, 11, 9])  # Inits tensor in correct shape
+    allDataPathsTensor = tf.zeros([0, 11, 5])  # Inits tensor in correct shape
     for scenes in range(
             len(allData)):  # loops through json data to convert into tensor of correct shape
         worldData = allData[scenes]["world"]
         worldData = json.loads(worldData)
-        scenePathsTensor = tf.zeros([0, 11, 9])
+        scenePathsTensor = tf.zeros([0, 11, 5])
         for agent in worldData:
             agent_movement = agent["motion"]
-            agentPathTensor = tf.zeros([0, 11, 9])
+            agentPathTensor = tf.zeros([0, 11, 5])
             observedSteps = 11
             counter = 0
-            agentStepsTensor = tf.zeros([0, 9])
+            agentStepsTensor = tf.zeros([0, 5])
             for s in range(len(agent_movement)):
                 if counter == observedSteps:
                     agentPathTensor = tf.concat(
                         [agentPathTensor, [agentStepsTensor]],
                         axis=0)  # make paths of 11 steps
-                    agentStepsTensor = tf.zeros([0, 9])
+                    agentStepsTensor = tf.zeros([0, 5])
                     counter = 0
 
                 positionTensor = tf.constant(  # store agent step in tensor
                     [agent_movement[s]['timestamp'],
                      agent_movement[s]['position']['pos_x'],
                      agent_movement[s]['position']['pos_y'],
-                     agent_movement[s]['position']['pos_z'],
-                     agent_movement[s]['position']['agent_angle'],
                      agent_movement[s]['velocity']['vel_x'],
-                     agent_movement[s]['velocity']['vel_y'],
-                     agent_movement[s]['velocity']['vel_z'],
-                     agent_movement[s]['velocity']['agent_vangle']])
+                     agent_movement[s]['velocity']['vel_y']])
                 agentStepsTensor = tf.concat(
                     [agentStepsTensor, [positionTensor]], axis=0)
                 counter += 1
@@ -245,13 +241,13 @@ def training():
     allDataPathsmin2Normalized = tf.reduce_min(allDataPathsminNormalized,
                                                axis=0)
 
-    np.save("./StoredData/allDataPathsmax2.npy", allDataPathsmax2,
+    np.save("StoredData/allDataPathsmax2.npy", allDataPathsmax2,
             allow_pickle=False)  # stores the normalization tensors
-    np.save("./StoredData/allDataPathsmin2.npy", allDataPathsmin2,
+    np.save("StoredData/allDataPathsmin2.npy", allDataPathsmin2,
             allow_pickle=False)
-    np.save("./StoredData/allDataPathsmax2Normalized.npy",
+    np.save("StoredData/allDataPathsmax2Normalized.npy",
             allDataPathsmax2Normalized, allow_pickle=False)
-    np.save("./StoredData/allDataPathsmin2Normalized.npy",
+    np.save("StoredData/allDataPathsmin2Normalized.npy",
             allDataPathsmin2Normalized, allow_pickle=False)
 
     size = allDataPathsTensorNormalized.get_shape().as_list()  # splits data into training and validation set
@@ -261,7 +257,7 @@ def training():
                                                  (size[0] - splitValue)], 0)
 
     i = 0
-    data_train = tf.zeros([0, 20, 11, 9])  # inits Tensor in correct shape
+    data_train = tf.zeros([0, 20, 11, 5])  # inits Tensor in correct shape
     while i < splitValue:  # splits data train into batches of size 20
         data_train_segment = data_train_whole[i: i + 20, :, :]
         if (splitValue - i) < 19:
@@ -269,7 +265,7 @@ def training():
         data_train = tf.concat([data_train, [data_train_segment]], axis=0)
         i += 20
     i = 0
-    data_val = tf.zeros([0, 20, 11, 9])  # inits Tensor in correct shape
+    data_val = tf.zeros([0, 20, 11, 5])  # inits Tensor in correct shape
     while i < splitValue:  # splits data val into batches of size 20
         data_val_segment = data_val_whole[i: i + 20, :, :]
         if (size[0] - splitValue - i) < 19:
